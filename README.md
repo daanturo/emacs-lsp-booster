@@ -75,10 +75,7 @@ Alternatively, you may install it from [crates.io](https://crates.io/crates/emac
        (when (byte-code-function-p bytecode)
          (funcall bytecode))))
    (apply old-fn args)))
-(advice-add (if (progn (require 'json)
-                       (fboundp 'json-parse-buffer))
-                'json-parse-buffer
-              'json-read)
+(advice-add #'lsp-json-read-buffer
             :around
             #'lsp-booster--advice-json-parse)
 
