@@ -64,9 +64,33 @@ Alternatively, you may install it from [crates.io](https://crates.io/crates/emac
 > Make sure NOT to use the [native-jsonrpc custom version](https://github.com/emacs-lsp/emacs) of Emacs
 
 1. **Use [plist for deserialization](https://emacs-lsp.github.io/lsp-mode/page/performance/#use-plists-for-deserialization) for lsp-mode**
-3. Add the following code to your `init.el`:
+3. Add the following code to your `init.el` (**before** loading `lsp-mode.el`!):
 
 ```elisp
+(defun my-lsp-booster-bytecode-maybe (str-or-current-buffer)
+  (let* ((char (if (stringp str-or-current-buffer)
+                   (seq-elt str-or-current-buffer 0)
+                 (following-char))))
+    (when (equal ?# char)
+      (let ((bytecode (read str-or-current-buffer)))
+        (when (byte-code-function-p bytecode)
+          (funcall bytecode))))))
+
+(defun my-lsp-booster--lsp-json-read-buffer--filter-return-a (orig-form)
+  `(or (my-lsp-booster-bytecode-maybe (current-buffer))
+       ,orig-form))
+
+(defun my-lsp-booster--lsp--read-json--a (oldfun str &rest args)
+  `(or (my-lsp-booster-bytecode-maybe ,str)
+       (apply ,oldfun ,str ,args)))
+
+;; Those 2 symbols being advised below are macros, so this snippet must be
+;; executed before loading lsp-mode.el.  This may not even be exhaustive if some
+;; server configs use `json-parse-buffer'/`json-read' & friends directly,
+;; bypassing the wrapper.
+(advice-add #'lsp-json-read-buffer :filter-return #'my-lsp-booster--lsp-json-read-buffer--filter-return-a)
+(advice-add #'lsp--read-json :around #'my-lsp-booster--lsp--read-json--a)
+
 (defun lsp-booster--advice-json-parse (old-fn &rest args)
   "Try to parse bytecode instead of json."
   (or
