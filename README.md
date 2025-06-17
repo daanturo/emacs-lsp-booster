@@ -64,7 +64,7 @@ Alternatively, you may install it from [crates.io](https://crates.io/crates/emac
 > Make sure NOT to use the [native-jsonrpc custom version](https://github.com/emacs-lsp/emacs) of Emacs
 
 1. **Use [plist for deserialization](https://emacs-lsp.github.io/lsp-mode/page/performance/#use-plists-for-deserialization) for lsp-mode**
-3. Add the following code to your `init.el` (**before** loading `lsp-mode.el`!):
+3. Add the following code to your `init.el`:
 
 ```elisp
 (defun my-lsp-booster-bytecode-maybe (str-or-current-buffer)
@@ -76,32 +76,20 @@ Alternatively, you may install it from [crates.io](https://crates.io/crates/emac
         (when (byte-code-function-p bytecode)
           (funcall bytecode))))))
 
-(defun my-lsp-booster--lsp-json-read-buffer--filter-return-a (orig-form)
-  `(or (my-lsp-booster-bytecode-maybe (current-buffer))
-       ,orig-form))
+(defvar my-lsp-booster-json-enable-code-execution nil)
+(defun my-lsp--create-filter-function--json-code-a (oldfun &rest args)
+  (let* ((filter-fn (apply oldfun args)))
+    (lambda (&rest filter-fn-args)
+      (dlet ((my-lsp-booster-json-enable-code-execution t))
+        (apply filter-fn filter-fn-args)))))
+(defun my-json-parse-buffer-bytecode-maybe-a (oldfun &rest args)
+  (or (and my-lsp-booster-json-enable-code-execution
+           (my-lsp-booster-bytecode-maybe (current-buffer)))
+      (apply oldfun args)))
 
-(defun my-lsp-booster--lsp--read-json--a (oldfun str &rest args)
-  `(or (my-lsp-booster-bytecode-maybe ,str)
-       (apply ,oldfun ,str ,args)))
-
-;; Those 2 symbols being advised below are macros, so this snippet must be
-;; executed before loading lsp-mode.el.  This may not even be exhaustive if some
-;; server configs use `json-parse-buffer'/`json-read' & friends directly,
-;; bypassing the wrapper.
-(advice-add #'lsp-json-read-buffer :filter-return #'my-lsp-booster--lsp-json-read-buffer--filter-return-a)
-(advice-add #'lsp--read-json :around #'my-lsp-booster--lsp--read-json--a)
-
-(defun lsp-booster--advice-json-parse (old-fn &rest args)
-  "Try to parse bytecode instead of json."
-  (or
-   (when (equal (following-char) ?#)
-     (let ((bytecode (read (current-buffer))))
-       (when (byte-code-function-p bytecode)
-         (funcall bytecode))))
-   (apply old-fn args)))
-(advice-add #'lsp-json-read-buffer
-            :around
-            #'lsp-booster--advice-json-parse)
+(advice-add #'lsp--create-filter-function :around #'my-lsp--create-filter-function--json-code-a)
+(advice-add #'json-read :around #'my-json-parse-buffer-bytecode-maybe-a)
+(advice-add #'json-parse-buffer :around #'my-json-parse-buffer-bytecode-maybe-a)
 
 (defun lsp-booster--advice-final-command (old-fn cmd &optional test?)
   "Prepend emacs-lsp-booster command to lsp CMD."
